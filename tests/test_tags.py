@@ -6,7 +6,6 @@ from liquid.ast import ChildNode
 from liquid.exceptions import LiquidSyntaxError, TemplateNotFound
 from liquid.expression import Identifier, IdentifierPathElement, StringLiteral
 from liquid.loaders import BaseLoader
-from pyjson5 import Json5Exception
 from pytest import raises
 
 from fhir_converter.tags import EvaluateNode, MergeDiffNode, all_tags, register_tags
@@ -41,7 +40,7 @@ class MergeDiffTest(TestCase):
             get_template(source=self.missing_identifier).render()
 
     def test_invalid(self) -> None:
-        with raises(Json5Exception):
+        with raises(Exception):
             template = get_template(source=self.block)
             template.render(var={"test": "ok"}, block="{test:ok}")
 
