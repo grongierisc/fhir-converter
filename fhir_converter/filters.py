@@ -7,6 +7,7 @@ from re import compile as re_compile
 from re import findall as re_findall
 from typing import Any, Callable, Final, Iterable, List, Mapping, Sequence, Tuple
 import uuid
+import json
 from zlib import compress as z_compress
 
 from dateutil import parser
@@ -24,7 +25,6 @@ from liquid.filter import (
     with_context,
     with_environment,
 )
-from pyjson5 import dumps as json_dumps
 
 from fhir_converter.hl7 import (
     Hl7DtmPrecision,
@@ -113,7 +113,10 @@ def to_json_string(obj: Any) -> str:
     """Serialize the given object to json"""
     if is_undefined_none_or_blank(obj):
         return ""
-    return json_dumps(obj)
+    json_str = json.dumps(obj, default=str, separators=(',', ':'))
+    if json_str == '""':
+        json_str = r"{}"
+    return json_str
 
 
 @liquid_filter

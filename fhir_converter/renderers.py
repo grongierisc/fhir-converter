@@ -23,9 +23,9 @@ from frozendict import frozendict
 from liquid import Environment
 from liquid.loaders import BaseLoader, PackageLoader
 from lxml.etree import QName
-from pyjson5 import encode_io
-from pyjson5 import loads as json_loads
+from json5 import loads as json_loads
 
+from fhir_converter.utils import encode_io
 from fhir_converter.exceptions import RenderingError, fail
 from fhir_converter.filters import all_filters, register_filters
 from fhir_converter.hl7 import parse_fhir, post_process_fhir

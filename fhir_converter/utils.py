@@ -7,6 +7,7 @@ from pathlib import Path
 from re import Pattern, sub as re_sub
 from re import compile as re_compile
 from typing import IO, Any, Dict, Final, Generator, List, Optional, Tuple, Union
+import json
 
 from liquid import Undefined
 from lxml import etree
@@ -18,6 +19,15 @@ FileDataIn: TypeAlias = Union[DataIn, PathLike]
 line_endings_pattern: Final[Pattern] = re_compile(r"\r\n?|\n")
 sanitize_pattern: Final[Pattern] = re_compile(r"\s\s+|\r\n?|\n")
 
+def encode_io(obj, fp, supply_bytes=False):
+    """Helper function to encode JSON to a file-like object"""
+    json_str = json.dumps(obj, default=str, separators=(',', ':'))
+    if json_str == '""':
+        json_str = r"{}"
+    if supply_bytes:
+        if not isinstance(json_str, bytes):
+            json_str = json_str.encode('utf-8')
+    fp.write(json_str)
 
 def sanitize_str(text: Optional[str], repl: str = " ") -> str:
     """sanitize_str trims leading / trailing spaces replacing line endings and

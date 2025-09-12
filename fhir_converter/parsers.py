@@ -4,7 +4,6 @@ import re
 from typing import IO, Any, Callable, Dict, List, Optional, Union
 
 from lxml import etree
-from pyjson5 import loads as json_loads
 
 from json5.loader import DefaultLoader, loads
 from json5.model import JSONObject

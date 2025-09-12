@@ -40,7 +40,6 @@ packages = [
 python = "^3.8.1"
 python-liquid = "1.12.1"
 xmltodict = "0.13.0"
-pyjson5 = "1.6.5"
 json-five = "1.1.2"
 frozendict = "2.3.10"
 importlib_resources = "6.1.1"
