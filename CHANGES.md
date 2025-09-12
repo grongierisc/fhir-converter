@@ -1,5 +1,8 @@
 # Python FHIR Converter Change Log
 
+## Version 0.4.10
+- Remove depency from pyjson5 replace with json-five slower but more efficient and build on python 3.13
+
 ## Version 0.4.0
 - Add support for HL7v2 to FHIR conversion. See [#12](https://github.com/chaseastewart/fhir-converter/pull/12)
 
