@@ -13,10 +13,11 @@ from liquid.builtin.expressions import (
     StringLiteral,
     parse_string_or_path,
 )
+from liquid.builtin.expressions.primitive import parse_primitive
 from liquid.parser import get_parser
 from liquid.stream import TokenStream
 from liquid.tag import Tag
-from liquid.token import TOKEN_TAG, TOKEN_COLON, TOKEN_COMMA, Token
+from liquid.token import TOKEN_TAG, TOKEN_COLON, TOKEN_COMMA, TOKEN_EOF, TOKEN_WORD, Token
 from liquid.undefined import is_undefined
 
 from json5 import loads as json_loads
@@ -78,8 +79,6 @@ class EvaluateNode(Node):
                 context.assign(self.name, temp_buffer.getvalue().strip())
 
         return 0  # Ne pas imprimer de contenu
-
-
 class EvaluateTag(Tag):
     """The "evaluate" tag."""
 
@@ -112,31 +111,40 @@ class EvaluateTag(Tag):
         # Parse le nom du template
         template_name = parse_string_or_path(self.env, tokens)
         
-        # Parse les arguments optionnels
+        # Parse les arguments optionnels (keyword arguments: name: value, name2: value2)
         args = {}
         
-        # Vérifier si il y a des arguments
-        while not tokens.eof:
-            # Si c'est le premier argument ET qu'il n'y a pas de virgule, ou 
-            # Si ce n'est pas le premier argument ET qu'il y a une virgule
-            if (not args and not tokens.current.test(",")) or (args and tokens.current.test(",")):
-                # Si ce n'est pas le premier argument, manger la virgule
-                if args:
-                    tokens.next()
-                
-                # Parse le nom de l'argument
-                arg_name_expr = parse_identifier(self.env, tokens, allow_trailing_question_mark=False)
-                arg_name = str(arg_name_expr)
-                
-                # Expect ":"
-                tokens.eat(TOKEN_COLON)
-                
-                # Parse la valeur de l'argument
-                arg_value = FilteredExpression.parse(self.env, tokens)
-                
-                args[arg_name] = arg_value
-            else:
+        # Skip leading commas
+        if tokens.current.kind == TOKEN_COMMA:
+            next(tokens)
+        
+        # Parse keyword arguments like include tag does
+        while True:
+            # Check for end of expression
+            if tokens.current.kind == TOKEN_EOF:
                 break
+            
+            # Skip commas between arguments
+            if tokens.current.kind == TOKEN_COMMA:
+                next(tokens)
+                if tokens.current.kind == TOKEN_EOF:
+                    break
+            
+            # Expect argument name (word token like 'AIG', 'HD', etc.)
+            token = next(tokens)
+            if token.kind != TOKEN_WORD:
+                # Not a keyword argument, we're done
+                break
+            
+            arg_name = token.value
+            
+            # Expect ":"
+            tokens.eat(TOKEN_COLON)
+            
+            # Parse argument value using parse_primitive (doesn't consume EOF like FilteredExpression.parse)
+            arg_value = parse_primitive(self.env, tokens)
+            
+            args[arg_name] = arg_value
 
         return EvaluateNode(
             token=token,
