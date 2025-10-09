@@ -136,3 +136,69 @@ PID|1|12345|12345||Doe^John||19900101|M||||||||||"""
         # Vérifier que l'identifiant du patient contient la valeur du PID
         identifier_values = [id['value'] for id in patient['identifier'] if 'value' in id]
         assert '12345' in identifier_values, f"Expected identifier '12345' in patient identifiers: {identifier_values}"
+    
+    def test_device_references_in_appointment_have_uuids(self):
+        """
+        Test de régression pour le bug où les références Device dans Appointment
+        étaient vides ("Device/") à cause d'une faute de frappe dans le template
+        _Appointment.liquid (device_ID_AIG_3 au lieu de device_Id_AIG_3).
+        """
+        renderer = Hl7v2Renderer()
+        
+        # Message HL7v2 SIU-S12 avec 3 segments AIG
+        hl7_message = """MSH|^~\\&|ADTApp|GOOD HEALTH HOSPITAL|RSP1P8|GOOD HEALTH HOSPITAL|20210513112700||SIU^S12|20210513112700|P|2.5
+EVN||20110613122700|||||
+PID|1|3333|3333||Test^Patient||19600101|F||||||||||3333
+PV1|1|A
+RGS|1|^||||||
+AIG|1||123^Cell Counter^L^^^^|011^Lab Equipment^L||||||||
+NTE|||Equipment specific Notes1
+AIG|1||1001^XYZ X-Ray Machine^L|015^Imaging Equipment^L||||||||
+NTE|||Equipment specific Notes2
+AIG|2||1010^ABC CT Scan Machine^L||||
+NTE|||Equipment specific Notes2"""
+        
+        # Rendre le message
+        output = renderer.render_fhir_string("SIU_S12", hl7_message)
+        
+        # Parser le JSON
+        import json
+        bundle = json.loads(output)
+        
+        # Trouver l'Appointment
+        appointments = [
+            entry['resource'] 
+            for entry in bundle['entry'] 
+            if entry['resource']['resourceType'] == 'Appointment'
+        ]
+        
+        assert len(appointments) >= 1, "Expected at least 1 Appointment resource"
+        
+        appointment = appointments[0]
+        assert 'participant' in appointment, "Appointment should have participants"
+        
+        # Vérifier que tous les participants Device ont des UUIDs valides
+        device_references = []
+        for participant in appointment['participant']:
+            if 'actor' in participant and 'reference' in participant['actor']:
+                ref = participant['actor']['reference']
+                if ref.startswith('Device/'):
+                    device_references.append(ref)
+        
+        # Note: parse_fhir() fusionne les participants avec le même type,
+        # donc on peut avoir moins de 3 références après fusion.
+        # L'important est qu'aucune référence ne soit vide.
+        assert len(device_references) >= 1, f"Expected at least 1 Device reference, got {len(device_references)}"
+        
+        # Vérifier qu'aucune référence Device n'est vide
+        for ref in device_references:
+            assert ref != "Device/", f"Found empty Device reference: {ref}"
+            # Vérifier que la référence contient un UUID (36 caractères après "Device/")
+            device_id = ref.replace("Device/", "")
+            assert len(device_id) == 36, f"Device reference should have a valid UUID (36 chars), got: {ref}"
+            assert '-' in device_id, f"Device reference should have a valid UUID format, got: {ref}"
+        
+        # Test régressif: l'UUID ne doit PAS être vide
+        # (c'était le bug avant la correction: "Device/" sans UUID)
+        invalid_refs = [ref for ref in device_references if ref == "Device/"]
+        assert len(invalid_refs) == 0, f"Found {len(invalid_refs)} empty Device references (regression)"
