@@ -1,6 +1,6 @@
 {% if XTN -%}
     {% if XTN."7" == null and XTN."12" == null -%}
-        {% unless XTN."3" == "Internet" or XTN."3" == "X."400"" -%}
+        {% unless XTN."3" == "Internet" or XTN."3" == "X.400" -%}
         "value":"{{ XTN."1".Value }}",
         {% endunless -%}
     {% endif -%}

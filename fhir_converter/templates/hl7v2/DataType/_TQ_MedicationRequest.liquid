@@ -20,7 +20,7 @@
             {% assign durationUnitsValue = TQ."3".Value | slice: 0 -%}
             {% assign durationUnits =  durationUnitsValue | get_property: 'CodeSystem/DurationUnit', 'code' %}
             {% if durationUnits == 'd' %}
-                {% assign durationValue = TQ.."3".Value | slice: 1,3 -%}
+                {% assign durationValue = TQ."3".Value | slice: 1,3 -%}
                 "duration": {{durationValue}},
                 "durationUnit": "{{durationUnits}}",
             {% elsif durationUnits == 's' or durationUnits == 'mo' or durationUnits == 'wk' or durationUnits == 'min' or durationUnits == 'h' %}
