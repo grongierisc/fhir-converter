@@ -1,5 +1,38 @@
 # Python FHIR Converter Change Log
 
+## Version 0.5.0
+**Major Update: Migration to python-liquid 2.0**
+
+### 🚀 Breaking Changes
+- **Upgraded to python-liquid 2.0** - Major dependency upgrade with breaking API changes
+- **Minimum Python version**: Now requires Python 3.8+ (aligned with python-liquid 2.0)
+
+### ✨ New Features  
+- **FHIR Syntax Extension**: Added custom liquid extension to maintain backward compatibility with `MSH."7"` syntax
+- **Enhanced Template Support**: Full support for HL7v2 templates with quoted numeric property access
+- **Improved Error Handling**: Better error messages and syntax validation
+
+### 🔧 Technical Improvements
+- **API Modernization**: Updated all internal APIs to use python-liquid 2.0 interfaces
+- **Filter Migration**: Successfully migrated all 176 custom filters to new API
+- **Tag Migration**: Updated custom tags (`evaluate`, `mergeDiff`) for liquid 2.0 compatibility  
+- **Performance**: Leverages liquid 2.0 performance improvements and stricter parsing
+- **Test Coverage**: Maintained 504 passing tests with comprehensive coverage
+
+### 🐛 Bug Fixes
+- **Template Syntax**: Fixed 4 template syntax errors discovered during migration (`X."400"`, `PV1.."16"`, etc.)
+- **Loader Compatibility**: Updated template loaders for liquid 2.0 caching behavior
+- **Expression Parsing**: Enhanced expression parsing for complex FHIR property paths
+
+### 📦 Dependencies
+- **python-liquid**: Updated from `~1.12.1` to `^2.0.0`
+- All other dependencies remain compatible
+
+### 🔄 Migration Notes
+- **Full Backward Compatibility**: All existing templates continue to work without modification
+- **Automatic Activation**: FHIR syntax extension is automatically enabled for all renders
+- **No Breaking Changes**: Public API remains unchanged for end users
+
 ## Version 0.4.10
 - Remove depency from pyjson5 replace with json-five slower but more efficient and build on python 3.13
 

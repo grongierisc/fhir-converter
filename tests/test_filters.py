@@ -6,9 +6,9 @@ from zlib import decompress
 from liquid import BoundTemplate, DictLoader, Environment
 from liquid.exceptions import (
     FilterArgumentError,
-    NoSuchFilterFunc,
+    UnknownFilterError,  # NoSuchFilterFunc -> UnknownFilterError in liquid 2.0
     OutputStreamLimitError,
-    TemplateNotFound,
+    TemplateNotFoundError,  # TemplateNotFound -> TemplateNotFoundError in liquid 2.0
 )
 from pytest import fixture, raises
 
@@ -32,7 +32,7 @@ class FilterTest:
         self.bound_template = env.from_string(self.template)
 
     def test_unregistered(self) -> None:
-        with raises(NoSuchFilterFunc):
+        with raises(UnknownFilterError):
             env = Environment()
             env.filters.clear()
             env.from_string(self.template).render()
@@ -766,7 +766,7 @@ class BatchRenderTest(TestCase, FilterTest):
         self.assertEqual(result, "one, \ntwo,  \n\nthree,   \n\n\n")
 
     def test_template_not_found(self) -> None:
-        with raises(TemplateNotFound):
+        with raises(TemplateNotFoundError):
             self.bound_template.render(batch=["one"], template="undefined")
 
     def test_output_limit_reached(self) -> None:

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import List, cast
 from unittest import TestCase
 
-from liquid import FileExtensionLoader
+from liquid import make_file_system_loader
 from liquid.utils import LRUCache
 from lxml.etree import XMLSyntaxError
 from json5 import JSON5DecodeError
@@ -27,8 +27,9 @@ from fhir_converter.utils import sanitize_str
 class MakeEnvironmentTest(TestCase):
     def test_defaults(self) -> None:
         env = make_environment(loader=ccda_default_loader)
-        self.assertFalse(env.auto_reload)
-        self.assertIsNone(env.cache)
+        # auto_reload et cache sont maintenant gérés par les loaders dans liquid 2.0
+        # self.assertFalse(env.auto_reload)
+        # self.assertIsNone(env.cache)
 
         self.assertIsInstance(env.loader, CachingTemplateSystemLoader)
         loader = cast(CachingTemplateSystemLoader, env.loader)
@@ -40,28 +41,28 @@ class MakeEnvironmentTest(TestCase):
 
     def test_auto_reload(self) -> None:
         env = make_environment(loader=ccda_default_loader, auto_reload=True)
-        self.assertFalse(env.auto_reload)
-        self.assertIsNone(env.cache)
+        # self.assertFalse(env.auto_reload)  # Propriété supprimée dans liquid 2.0
+        # self.assertIsNone(env.cache)  # Propriété supprimée dans liquid 2.0
 
         loader = cast(CachingTemplateSystemLoader, env.loader)
         self.assertTrue(loader.auto_reload)
 
     def test_cache_size(self) -> None:
         env = make_environment(loader=ccda_default_loader, cache_size=1)
-        self.assertFalse(env.auto_reload)
-        self.assertIsNone(env.cache)
+        # self.assertFalse(env.auto_reload)  # Propriété supprimée dans liquid 2.0
+        # self.assertIsNone(env.cache)  # Propriété supprimée dans liquid 2.0
 
         loader = cast(CachingTemplateSystemLoader, env.loader)
         self.assertEqual(loader.cache.capacity, 1)  # type: ignore
 
     def test_cache_disabled(self) -> None:
         env = make_environment(loader=ccda_default_loader, cache_size=0)
-        self.assertFalse(env.auto_reload)
-        self.assertIsNone(env.cache)
+        # self.assertFalse(env.auto_reload)  # Propriété supprimée dans liquid 2.0
+        # self.assertIsNone(env.cache)  # Propriété supprimée dans liquid 2.0
         self.assertIsInstance(env.loader, TemplateSystemLoader)
 
     def test_additional_loaders(self) -> None:
-        loader = FileExtensionLoader(search_path="data/templates/ccda")
+        loader = make_file_system_loader(search_path="data/templates/ccda")
         env = make_environment(
             loader,
             additional_loaders=[ccda_default_loader],

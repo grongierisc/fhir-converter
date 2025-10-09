@@ -15,7 +15,7 @@ from frozendict import frozendict
 from isodate import isotzinfo, parse_datetime
 from liquid import Environment, Undefined
 from liquid.builtin.filters.misc import date as liquid_date
-from liquid.context import Context
+from liquid import RenderContext
 from liquid.exceptions import FilterArgumentError
 from liquid.filter import (
     flatten,
@@ -102,7 +102,7 @@ def mapping_filter(_filter: FilterT) -> FilterT:
     @wraps(_filter)
     def wrapper(val: Any, *args: Any, **kwargs: Any) -> Any:
         if not isinstance(val, Mapping):
-            raise FilterArgumentError(f"expected a mapping, found {type(val).__name__}")
+            raise FilterArgumentError(f"expected a mapping, found {type(val).__name__}", token=None)
         return _filter(val, *args, **kwargs)
 
     return wrapper
@@ -275,7 +275,7 @@ def truncate_number(data: str) -> str:
 @with_context
 @string_filter
 def get_property(
-    code: str, mapping_key: Any, property_name: Any = None, *, context: Context
+    code: str, mapping_key: Any, property_name: Any = None, *, context: RenderContext
 ) -> str:
     """get_property Get the codified property mapping from the ``code_mapping`` global in
     the supplied context. ``mapping_key`` indicates the type of mapping.  Mappings may be
@@ -357,7 +357,7 @@ def get_ccda_section_by_template_id(
 @with_context
 @sequence_filter
 def batch_render(
-    batch: Sequence[Any], template_name: Any, arg_name: Any, *, context: Context
+    batch: Sequence[Any], template_name: Any, arg_name: Any, *, context: RenderContext
 ) -> str:
     """batch_render Render the given batch data with the supplied template passing
     the data in the batch as the specified arg / parameter name to the template
@@ -377,7 +377,7 @@ def batch_render(
     """
     if is_undefined_none_or_blank(batch):
         return ""
-    template = context.get_template_with_context(str_arg(template_name))
+    template = context.get_template(str_arg(template_name))
     with context.get_buffer() as buffer:
         for data in batch:
             with context.extend(namespace={str_arg(arg_name): data}, template=template):
@@ -390,7 +390,7 @@ def batch_render(
 
 @with_context
 @string_filter
-def transform_narrative(text: str, *, context: Context) -> Mapping:
+def transform_narrative(text: str, *, context: RenderContext) -> Mapping:
     """transform_narrative transform the given narrative text
 
     Args:

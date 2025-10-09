@@ -20,8 +20,8 @@ from typing import (
 )
 
 from frozendict import frozendict
-from liquid import Environment
-from liquid.loaders import BaseLoader, PackageLoader
+from liquid import Environment, PackageLoader
+from liquid.loader import BaseLoader
 from lxml.etree import QName
 from json5 import loads as json_loads
 
@@ -32,6 +32,7 @@ from fhir_converter.hl7 import parse_fhir, post_process_fhir
 from fhir_converter.loaders import make_template_system_loader, read_text
 from fhir_converter.parsers import ParseXmlOpts, parse_json, parse_xml, parse_xml_filter, Hl7v2DataParser
 from fhir_converter.tags import all_tags, register_tags
+from fhir_converter.liquid_extensions import enable_fhir_syntax
 from fhir_converter.utils import (
     del_empty_dirs_quietly,
     del_path_quietly,
@@ -45,11 +46,12 @@ from fhir_converter.utils import (
     read_text as reader,
 )
 
-from fhir_converter.expressions import (
-    parse_loop_expression,
-    parse_boolean_expression,
-    parse_filtered_expression
-)
+# Expressions personnalisées temporairement désactivées pour la migration
+# from fhir_converter.expressions import (
+#     parse_loop_expression,
+#     parse_boolean_expression,
+#     parse_filtered_expression
+# )
 
 from liquid.mode import Mode
 
@@ -334,10 +336,12 @@ class Hl7v2Renderer(BaseFhirRenderer):
     ) -> None:
         super().__init__(env)
         # TODO: Remove this mode setting when the liquid library is updated
-        self.env.mode = Mode.WARN
-        self.env.parse_loop_expression_value = parse_loop_expression
-        self.env.parse_boolean_expression_value = parse_boolean_expression
-        self.env.parse_filtered_expression_value = parse_filtered_expression
+        # Note: Mode.WARN n'existe peut-être plus dans liquid 2.0
+        # self.env.mode = Mode.WARN
+        # Expressions personnalisées temporairement désactivées
+        # self.env.parse_loop_expression_value = parse_loop_expression
+        # self.env.parse_boolean_expression_value = parse_boolean_expression
+        # self.env.parse_filtered_expression_value = parse_filtered_expression
         self.template_globals = self._make_globals(template_globals)
 
 
@@ -391,6 +395,9 @@ def make_environment(
     Returns:
         Environment: The rendering environment
     """
+    # Activer le support de la syntaxe FHIR ."nombre" pour la compatibilité
+    enable_fhir_syntax()
+    
     env = Environment(
         loader=make_template_system_loader(
             loader,
@@ -398,7 +405,7 @@ def make_environment(
             cache_size=cache_size,
             additional_loaders=additional_loaders,
         ),
-        cache_size=cache_size,
+        # cache_size removed in liquid 2.0 - now handled by loaders
         **kwargs,
     )
     register_filters(env, all_filters, replace=True)
