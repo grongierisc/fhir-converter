@@ -4,7 +4,7 @@
 
 import argparse
 
-from liquid import FileExtensionLoader
+from liquid import FileSystemLoader
 
 from fhir_converter.renderers import (
     Hl7v2Renderer,
@@ -61,7 +61,7 @@ def main():
 
     renderer = Hl7v2Renderer(
         env=make_environment(
-            loader=FileExtensionLoader(search_path=args.template_dir),
+            loader=FileSystemLoader(search_path=args.template_dir),
             additional_loaders=[hl7v2_default_loader],
         )
     )
