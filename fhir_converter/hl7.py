@@ -255,11 +255,14 @@ def post_process_fhir(json_data: str) -> Any:
     init = parse_fhir(json_data)
     if isinstance(init, dict):
         entries = to_list_or_empty(init.get("entry", []))
-        for i in range(1, len(entries)-1):
+        # Iterate backwards to avoid index issues when deleting
+        i = len(entries) - 1
+        while i > 0:
             if entries[i - 1].get("resource", {}).get("resourceType") == entries[i].get("resource", {}).get("resourceType"):
                 if "extension" in entries[i].get("resource", {}):
                     merge_extension(entries[i - 1], entries[i])
                     del entries[i]
+            i -= 1
     return init
 
 
