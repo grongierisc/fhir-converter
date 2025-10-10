@@ -1,5 +1,29 @@
 # Python FHIR Converter Change Log
 
+## Version 0.5.1
+**Bug Fixes: {% evaluate %} Tag Parameter Passing**
+
+### 🐛 Bug Fixes
+- **Fixed {% evaluate %} tag parameter passing** - Corrected regression where the `{% evaluate %}` tag was not passing parameters to rendered templates after liquid 2.0 migration
+  - **Root cause**: The parsing loop `while not tokens.eof` never executed because `tokens.eof` returns a Token object instead of a boolean
+  - **Solution**: Changed to `while tokens.current.kind != TOKEN_EOF` and used `parse_primitive()` instead of `FilteredExpression.parse()`
+  - **Impact**: Device resources now correctly generate distinct UUIDs based on their segment parameters (AIG, HD, etc.) instead of all using the same empty UUID
+  
+- **Fixed empty Device references in Appointment participants** - Corrected typo in `_Appointment.liquid` template
+  - **Root cause**: Template used `device_ID_AIG_3` (uppercase ID) instead of `device_Id_AIG_3` (lowercase Id as defined in evaluate tag)
+  - **Impact**: Appointment participants now correctly reference Device resources with valid UUIDs instead of empty references (`"Device/"`)
+
+### ✅ Tests Added
+- **test_evaluate_tag.py**: Three new regression tests
+  - `test_evaluate_tag_passes_parameters_to_template`: Verifies evaluate tag passes parameters correctly and generates distinct UUIDs
+  - `test_evaluate_tag_with_multiple_parameters`: Tests multiple comma-separated parameters
+  - `test_device_references_in_appointment_have_uuids`: Ensures Device references in Appointment have valid UUIDs
+
+### 📝 Technical Details
+- Updated `EvaluateTag.parse` in `tags.py` to correctly iterate through argument tokens
+- Fixed token stream handling to match python-liquid 2.0 `KeywordArgument.parse` pattern
+- Added imports: `TOKEN_EOF`, `TOKEN_WORD`, `parse_primitive`
+
 ## Version 0.5.0
 **Major Update: Migration to python-liquid 2.0**
 
