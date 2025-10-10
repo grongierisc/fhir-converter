@@ -94,9 +94,11 @@ $ pip install python-fhir-converter
 ```
 
 
-## Links
+## Documentation
 
-- [Documentation](https://chaseastewart.github.io/fhir-converter/): https://chaseastewart.github.io/fhir-converter/
+- **[Architecture Guide](ARCHITECTURE.md)**: High-level overview of the library's architecture and conversion pipeline, especially for HL7v2 to FHIR
+- **[Technical Guide](TECHNICAL_GUIDE.md)**: Detailed technical reference for working with HL7v2 data, Liquid templates, and JSON5 processing
+- [API Documentation](https://chaseastewart.github.io/fhir-converter/): https://chaseastewart.github.io/fhir-converter/
 - [PyPi](https://pypi.org/project/python-fhir-converter/): https://pypi.org/project/python-fhir-converter/
 - [Source](https://github.com/chaseastewart/fhir-converter): https://github.com/chaseastewart/fhir-converter 
 - [Issues](https://github.com/chaseastewart/fhir-converter/issues): https://github.com/chaseastewart/fhir-converter/issues
