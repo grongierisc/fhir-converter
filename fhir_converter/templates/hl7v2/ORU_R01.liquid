@@ -66,7 +66,7 @@
         {% for sftSegment in sftSegmentLists.SFT -%}
             {% evaluate deviceId_SFT using 'ID/Device' SFT: sftSegment -%}    
             {% include 'Resource/Device' SFT:sftSegment, ID: deviceId_SFT -%}
-            {% include 'Resource/MessageHeader' MSH: firstSegments.MSH, SFT:sftSegment, ID: messageHeaderID -%}
+            {% include 'Resource/MessageHeader' MSH: firstSegments.MSH, SFT:sftSegment, ID: messageHeaderId -%}
         {% endfor -%}
         {% assign prtSegmentPositionIndex = 0 %}
         {% for pidSegment in pidSegmentLists.PID -%}
@@ -295,10 +295,30 @@
                 {% endif %}
             {% endfor %}
 
+            {%- comment -%} 
+            This OBX loop at PID level is for OBX segments without an OBR parent.
+            Skip OBX that have an OBR parent as they will be processed in the OBR loop.
+            {%- endcomment -%}
             {% for obxSegment in obxSegmentLists.OBX -%}
-                {% assign prtSegmentLists = hl7v2Data | get_related_segment_list: obxSegment, 'PRT' -%}
-                {% assign observationId = null %}
-                {% assign obx_diagnosticReportID1 = null %}
+                {%- comment -%} Check if this OBX has an OBR parent {%- endcomment -%}
+                {% assign hasOBRParent = false %}
+                {% for obrSegment in obrSegmentLists.OBR -%}
+                    {% assign obrObxList = hl7v2Data | get_related_segment_list: obrSegment, 'OBX' -%}
+                    {% for obrObx in obrObxList.OBX -%}
+                        {% if obrObx == obxSegment %}
+                            {% assign hasOBRParent = true %}
+                            {% break %}
+                        {% endif %}
+                    {% endfor %}
+                    {% if hasOBRParent %}
+                        {% break %}
+                    {% endif %}
+                {% endfor -%}
+                
+                {% unless hasOBRParent %}
+                    {% assign prtSegmentLists = hl7v2Data | get_related_segment_list: obxSegment, 'PRT' -%}
+                    {% assign observationId = null %}
+                    {% assign obx_diagnosticReportID1 = null %}
                 {% if obxSegment."2".Value == 'ED' or obxSegment."2".Value == 'RP' %}
                     {% for obx_16 in obxSegment."16".Repeats -%}
                         {% if obx_16."9"."1" != "" and obx_16."9"."1" != null and obx_16."9"."2" != "" and obx_16."9"."2" != null and obx_16."9"."3" != "" and obx_16."9"."3" != null -%}
@@ -491,7 +511,7 @@
                     
                 {% endfor %}
                 {%- comment -%} PATIENT_OBSERVATION - PRT related coding ends {%- endcomment -%}
-
+                {% endunless %} {%- comment -%} End of hasOBRParent check {%- endcomment -%}
             {% endfor -%}
             
             {% if pv1Segment -%}
@@ -893,7 +913,7 @@
                 {% include 'Resource/Practitioner' OBR: obrSegment, CNN_OBR_34_1: obr_34."1", ID: practitionerId_obr_34 -%}
                 {% evaluate practitionerRoleId_obr_34 using 'ID/PractitionerRole' NDL: obr_34 -%}
                 {% assign full_practitionerId_obr_34 = practitionerId_obr_34 | prepend: 'Practitioner/' %}
-                {% assign full_practitionerRoleId_obr_34 = practitionerRoleId_obrSegment_34 | prepend: 'PractitionerRole/' %}
+                {% assign full_practitionerRoleId_obr_34 = practitionerRoleId_obr_34 | prepend: 'PractitionerRole/' %}
                 {% include 'Resource/PractitionerRole' OBR_34: OBR_34, ID: practitionerRoleId_obr_34 -%}   
                 {% include 'DataType/NDLLocation' NDL: obr_34 -%}
                 {% include 'Reference/PractitionerRole/Practitioner' REF: full_practitionerId_obr_34, ID: practitionerRoleId_obr_34 -%}
@@ -904,7 +924,7 @@
                 {% include 'Resource/Practitioner' OBR: obrSegment, CNN_OBR_35_1: obr_35."1", ID: practitionerId_obr_35 -%}
                 {% evaluate practitionerRoleId_obr_35 using 'ID/PractitionerRole' NDL: obr_35 -%}
                 {% assign full_practitionerId_obr_35 = practitionerId_obr_35 | prepend: 'Practitioner/' %}
-                {% assign full_practitionerRoleId_obr_35 = practitionerRoleId_obrSegment_35 | prepend: 'PractitionerRole/' %}
+                {% assign full_practitionerRoleId_obr_35 = practitionerRoleId_obr_35 | prepend: 'PractitionerRole/' %}
                 {% include 'Resource/PractitionerRole' OBR_35: OBR_35, ID: practitionerRoleId_obr_35 -%}   
                 {% include 'DataType/NDLLocation' NDL: obr_35 -%}
                 {% include 'Reference/PractitionerRole/Practitioner' REF: full_practitionerId_obr_35, ID: practitionerRoleId_obr_35 -%}
@@ -1285,7 +1305,84 @@
             {% assign observationId = null %}
             {%- assign obx_diagnosticReportID2 = null -%}
             
-            {% for obxSegment in obxSegmentLists.OBX -%}
+            {%- comment -%} Check if this is a panel observation (e.g., Blood Pressure Panel) {%- endcomment -%}
+            {% assign isPanelObservation = false %}
+            {% assign panelCodes = "85354-9,85354-9" | split: "," %}
+            {% if obrSegment."4"."1".Value %}
+                {% for panelCode in panelCodes %}
+                    {% if obrSegment."4"."1".Value == panelCode %}
+                        {% assign isPanelObservation = true %}
+                        {% break %}
+                    {% endif %}
+                {% endfor %}
+            {% endif %}
+            
+            {%- comment -%} If this is a panel observation, create one Observation with components {%- endcomment -%}
+            {% if isPanelObservation and obxSegmentLists.OBX.size > 1 %}
+                {% evaluate panelObservationId using 'ID/Observation' OBR: obrSegment, baseId: patientId -%}
+                
+                {%- comment -%} Create resources for practitioners and organizations from first OBX {%- endcomment -%}
+                {% assign firstObx = obxSegmentLists.OBX[0] %}
+                {% for obx_16 in firstObx."16".Repeats -%}
+                    {% if obx_16."9"."1" != "" and obx_16."9"."1" != null and obx_16."9"."2" != "" and obx_16."9"."2" != null and obx_16."9"."3" != "" and obx_16."9"."3" != null -%}
+                        {% evaluate Organization_ID_OBX_16 using 'ID/Organization' HDORG: obx_16."9" -%}
+                        {% include 'Resource/Organization' OBX: obx_16."9", ID: Organization_ID_OBX_16 -%}
+                    {% endif -%}
+                    {% evaluate practitionerId_OBX_16 using 'ID/Practitioner' XCN: obx_16 -%}
+                    {% include 'Resource/Practitioner' OBX: firstObx, OBXXCN1: obx_16, ID: practitionerId_OBX_16 -%}
+                    {% evaluate practitionerRoleId_OBX_16 using 'ID/PractitionerRole' XCN: obx_16 -%}
+                    {% assign full_practitionerId_OBX_16 = practitionerId_OBX_16 | prepend: 'Practitioner/' %}
+                    {% include 'Resource/PractitionerRole' OBXXCN1: obx_16, ID: practitionerRoleId_OBX_16 -%}   
+                    {% include 'Reference/PractitionerRole/Practitioner' REF: full_practitionerId_OBX_16, ID: practitionerRoleId_OBX_16 -%}
+                {% endfor %}
+                {% if firstObx."18" -%}
+                    {% evaluate deviceId_OBX_18 using 'ID/Device' EI: firstObx."18".Repeats[0] -%}
+                    {% include 'Resource/Device' EI_OBX18: firstObx."18", ID: deviceId_OBX_18 -%}
+                {% endif -%}
+                {% if firstObx."23" or firstObx."25" %}
+                    {% evaluate practitionerRoleId_OBX_25 using 'ID/PractitionerRole' XCN: firstObx."25" -%}
+                {% endif %}
+                {% if firstObx."25" -%}
+                    {% evaluate practitionerId_OBX_25 using 'ID/Practitioner' XCN: firstObx."25" -%}
+                    {% include 'Resource/Practitioner' OBX: firstObx, OBXXCN2: firstObx."25", ID: practitionerId_OBX_25 -%}
+                    {% assign full_practitionerId_OBX_25 = practitionerId_OBX_25 | prepend: 'Practitioner/' %}
+                    {% include 'Resource/PractitionerRole' OBXXCN2: firstObx."25", ID: practitionerRoleId_OBX_25 -%}  
+                    {% include 'Reference/PractitionerRole/Practitioner' REF: full_practitionerId_OBX_25, ID: practitionerRoleId_OBX_25 -%}
+                {% endif -%}
+                {% if firstObx."23" -%}
+                    {% evaluate organizationId_OBX_23 using 'ID/Organization' XON: firstObx."23" -%}
+                    {% include 'Resource/Organization' OBX_23: firstObx."23", OBX_24: firstObx."24", ID: organizationId_OBX_23 -%}                
+                    {% if firstObx."25" -%}
+                        {% assign full_organizationId_OBX_23 = organizationId_OBX_23 | prepend: 'Organization/' %} 
+                        {% include 'Reference/PractitionerRole/Organization' REF: full_organizationId_OBX_23, ID: practitionerRoleId_OBX_25 -%}     
+                    {% endif -%}
+                {% endif -%}
+                
+                {%- comment -%} Generate panel observation with components {%- endcomment -%}
+                {% include 'Resource/ObservationPanel' OBR: obrSegment, OBXList: obxSegmentLists.OBX, Observation_Subject_ID: fullPatientId, Observation_ServiceRequest_ID: serviceRequestId, ID: panelObservationId -%}
+                {% include 'Extensions/Observation/ObservationExtension' OBX: firstObx, ID: panelObservationId %}
+                
+                {%- comment -%} Add NTE segments {%- endcomment -%}
+                {% for obxSegment in obxSegmentLists.OBX -%}
+                    {% assign nteSegmentLists2 = hl7v2Data | get_related_segment_list: obxSegment, 'NTE' -%}
+                    {% for nteSegment2 in nteSegmentLists2.NTE -%}    
+                        {% if nteSegment2."5" -%}    
+                            {% if nteSegment2."5"."9"."1" != "" and nteSegment2."5"."9"."1" != null and nteSegment2."5"."9"."2" != "" and nteSegment2."5"."9"."2" != null and nteSegment2."5"."9"."3" != "" and nteSegment2."5"."9"."3" != null -%}
+                                {% evaluate Organization_ID_NTE2_5_9 using 'ID/Organization' HDORG: nteSegment2."5"."9" -%}
+                                {% include 'Resource/Organization' OBX_NTE: nteSegment2."5"."9", ID: Organization_ID_NTE2_5_9 -%}
+                            {% endif -%}     
+                            {% evaluate practitioner_ID_NTE_5 using 'ID/Practitioner' XCN: nteSegment2."5" -%}
+                            {% include 'Resource/Practitioner' NTE: nteSegment2."5", ID: practitioner_ID_NTE_5 -%}
+                        {% endif -%} 
+                        {% include 'Resource/Observation' NTE: nteSegment2, ID: panelObservationId -%}
+                    {% endfor -%}
+                {% endfor -%}
+                
+                {% assign fullPanelObservationId = panelObservationId | prepend: 'Observation/' -%}
+                {% include 'Reference/DiagnosticReport/Result' ID: diagnosticId, REF: fullPanelObservationId -%}
+            {% else %}
+                {%- comment -%} Standard processing: one Observation per OBX {%- endcomment -%}
+                {% for obxSegment in obxSegmentLists.OBX -%}
                 {% if obxSegment."2".Value == 'ED' or obxSegment."2".Value == 'RP' %}
                     {% for obx_16 in obxSegment."16".Repeats -%}
                         {% if obx_16."9"."1" != "" and obx_16."9"."1" != null and obx_16."9"."2" != "" and obx_16."9"."2" != null and obx_16."9"."3" != "" and obx_16."9"."3" != null -%}
@@ -1501,6 +1598,7 @@
 
                 {%- comment -%} OBSERVATION - PRT related coding end {%- endcomment -%}
             {% endfor -%}
+            {% endif %} {%- comment -%} end of isPanelObservation check {%- endcomment -%}
 
             {% assign tq1SegmentLists = hl7v2Data | get_related_segment_list: obrSegment, 'TQ1' -%}
             {% unless tq1SegmentLists.TQ1 -%}
