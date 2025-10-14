@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from os import PathLike
 import re
-from typing import IO, Any, Callable, Dict, List, Optional, Union
+from typing import IO, Any, Callable, Dict, List, Optional, Pattern, Tuple, Union
 
 from lxml import etree
 
@@ -18,6 +18,14 @@ from fhir_converter.utils import (
     read_text,
     sanitize_str,
     merge_dict
+)
+
+# Pre-compiled regex patterns for performance
+_COMMA_PATTERNS: Tuple[Tuple[Pattern, str], ...] = (
+    (re.compile(r",\s*,"), ","),
+    (re.compile(r"\[\s*,\s*\]"), "[]"),
+    (re.compile(r"\{\s*,\s*\}"), "{}"),
+    (re.compile(r":\s*,"), ':"",'),
 )
 
 @dataclass(frozen=True)
@@ -160,7 +168,10 @@ def parse_json(
     return _remove_empty_json(json) if ignore_empty_fields else json
 
 def _fix_commas(value: str) -> str:
-    """fix_double_comma Fixes double commas in the value
+    """fix_double_comma Fixes double commas in the value using pre-compiled patterns
+    
+    Performance optimized: Uses pre-compiled regex patterns to avoid
+    re-compilation overhead on every call.
 
     Args:
         value (str): the value to fix
@@ -171,12 +182,10 @@ def _fix_commas(value: str) -> str:
     # Remove any new lines
     value = value.replace("\n", "")
 
-    value = re.sub(r",\s*,", ",", value)
-    # If a comme is in between [] or {} then remove it
-    value = re.sub(r"\[\s*,\s*\]", "[]", value)
-    value = re.sub(r"\{\s*,\s*\}", "{}", value)
-    # If a comme is after a : then remove it
-    value = re.sub(r":\s*,", ':"",', value)
+    # Apply all comma-fixing patterns efficiently
+    for pattern, replacement in _COMMA_PATTERNS:
+        value = pattern.sub(replacement, value)
+    
     return value
 
 

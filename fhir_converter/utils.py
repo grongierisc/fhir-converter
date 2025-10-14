@@ -135,6 +135,9 @@ def blank_str_to_empty(obj: str) -> str:
 def merge_dict(a: Dict[Any, Any], b: Dict[Any, Any]) -> Dict[Any, Any]:
     """merge_dict Merges the key/value pair mappings similarly to
     newtonsoft Merge.
+    
+    Performance optimized: Reduces dictionary lookups by using dict.get()
+    instead of checking membership then accessing.
 
     See https://www.newtonsoft.com/json/help/html/MergeJson.htm
 
@@ -149,20 +152,26 @@ def merge_dict(a: Dict[Any, Any], b: Dict[Any, Any]) -> Dict[Any, Any]:
         if bv is None:
             continue
 
-        if bk not in a:
+        # Use get() for single lookup instead of 'in' check + access
+        av = a.get(bk)
+        
+        if av is None:
+            # Key doesn't exist in a, add it
             a[bk] = bv
+        elif type(av) != type(bv):
+            # Type mismatch, replace
+            a[bk] = bv
+        elif isinstance(bv, dict):
+            # Recursively merge dictionaries
+            merge_dict(av, bv)
+        elif isinstance(bv, list):
+            # Merge lists (avoiding duplicates)
+            for v in bv:
+                if v not in av:
+                    av.append(v)
         else:
-            av = a[bk]
-            if type(av) != type(bv):
-                a[bk] = bv
-            elif isinstance(bv, dict):
-                merge_dict(av, bv)
-            elif isinstance(bv, list):
-                for v in bv:
-                    if v not in av:
-                        av.append(v)
-            else:
-                a[bk] = bv
+            # Replace scalar value
+            a[bk] = bv
     return a
 
 
