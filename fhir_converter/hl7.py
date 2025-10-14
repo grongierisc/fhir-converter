@@ -247,10 +247,46 @@ def to_fhir_dtm(dt: datetime, precision: Optional[FhirDtmPrecision] = None) -> s
     return date_str
 
 
+def is_empty_resource(resource: dict) -> bool:
+    """is_empty_resource Checks if a resource only contains id and resourceType fields
+    
+    A resource is considered empty if it only has:
+    - resourceType
+    - id
+    And no other meaningful data fields
+    
+    Args:
+        resource (dict): The FHIR resource to check
+        
+    Returns:
+        bool: True if the resource is empty, False otherwise
+    """
+    if not isinstance(resource, dict):
+        return False
+    
+    # Get all keys except resourceType and id
+    meaningful_keys = {k for k in resource.keys() if k not in ('resourceType', 'id')}
+    
+    # If there are no other keys, it's empty
+    if not meaningful_keys:
+        return True
+    
+    # Check if all remaining fields are empty/null
+    for key in meaningful_keys:
+        value = resource.get(key)
+        # If the value is not empty, the resource is not empty
+        if value is not None and value != [] and value != {} and value != "":
+            return False
+    
+    return True
+
+
 def post_process_fhir(json_data: str) -> Any:
     """post_process_fhir Post processes the FHIR object
-    1/ if we have two concecutively entries with the same resourceType
+    1/ if we have two consecutive entries with the same resourceType
     and the second entry has only extensions, we merge the extensions into the first entry
+    
+    Note: Empty resource filtering is now done in parse_fhir for better performance
 
     Args:
         json_data (Any): The FHIR object
@@ -269,13 +305,15 @@ def post_process_fhir(json_data: str) -> Any:
                     merge_extension(entries[i - 1], entries[i])
                     del entries[i]
             i -= 1
+    
     return init
 
 
 def parse_fhir(json_input: str) -> Any:
     """parse_fhir Parses the given json input string to a FHIR object. In
     the event of a FHIR bundle an attempt will be made to merge duplicate
-    entries for the same entity
+    entries for the same entity. Also filters out empty resources during
+    the merge process for efficiency.
 
     See merge_dict for more information
 
@@ -291,12 +329,21 @@ def parse_fhir(json_input: str) -> Any:
         if len(entries) > 1:
             unique_entrys: Dict[str, Dict] = {}
             for entry in entries:
+                # Skip empty resources during merge to avoid processing them
+                resource = entry.get("resource", {})
+                if is_empty_resource(resource):
+                    continue
+                    
                 key = get_fhir_entry_key(entry)
                 if key in unique_entrys:
                     merge_dict(unique_entrys[key], entry)
                 else:
                     unique_entrys[key] = entry
             json_data["entry"] = list(unique_entrys.values())
+        elif len(entries) == 1:
+            # Also filter single entry if it's empty
+            if is_empty_resource(entries[0].get("resource", {})):
+                json_data["entry"] = []
     return json_data
 
 def merge_extension(entry:dict, extension: dict) -> None:
