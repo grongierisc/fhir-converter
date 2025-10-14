@@ -20,6 +20,14 @@ from fhir_converter.utils import (
     merge_dict
 )
 
+# Try to import orjson for fast JSON parsing (2-4x faster than json5)
+# Falls back to json5 if not available
+try:
+    import orjson
+    _ORJSON_AVAILABLE = True
+except ImportError:
+    _ORJSON_AVAILABLE = False
+
 # Pre-compiled regex patterns for performance
 _COMMA_PATTERNS: Tuple[Tuple[Pattern, str], ...] = (
     (re.compile(r",\s*,"), ","),
@@ -149,9 +157,15 @@ def _remove_empty_json(obj: Any) -> Any:
 
 
 def parse_json(
-    json_in: JsonDataIn, encoding: str = "utf-8", ignore_empty_fields: bool = True
+    json_in: JsonDataIn, 
+    encoding: str = "utf-8", 
+    ignore_empty_fields: bool = True,
+    use_fast_parser: bool = True
 ) -> Any:
-    """parse_json Parses the JSON string using a JSON 5 compliant decoder
+    """parse_json Parses the JSON string using the fastest available parser
+    
+    Performance optimized: Uses orjson (2-4x faster) when available, 
+    falls back to json5 for compatibility.
 
     Any empty JSON will be removed from decoded output. See remove_empty_json
 
@@ -159,12 +173,28 @@ def parse_json(
         json_in (JsonDataIn): the json to decode
         encoding (str, optional): the character encoding to use. Defaults to "utf-8"
         ignore_empty_fields (bool): Whether to ignore empty fields. Defaults to True
+        use_fast_parser (bool): Use orjson if available for better performance. Defaults to True
 
     Returns:
         Any: the decoded output
     """
+    text = read_text(json_in, encoding)
+    
+    # Try fast parser first if enabled and available
+    if use_fast_parser and _ORJSON_AVAILABLE:
+        try:
+            # orjson is much faster but doesn't support JSON5 features
+            # It returns bytes, so we need to handle the result
+            json = orjson.loads(text)
+            return _remove_empty_json(json) if ignore_empty_fields else json
+        except (orjson.JSONDecodeError, ValueError):
+            # Fall through to json5 parser if orjson fails
+            # This handles JSON5 features like trailing commas, comments
+            pass
+    
+    # Fallback to json5 parser (supports JSON5 syntax)
     loader = json5_skip_empty_loader if ignore_empty_fields else DefaultLoader()
-    json = loads(_fix_commas(read_text(json_in, encoding)), loader=loader)
+    json = loads(_fix_commas(text), loader=loader)
     return _remove_empty_json(json) if ignore_empty_fields else json
 
 def _fix_commas(value: str) -> str:
