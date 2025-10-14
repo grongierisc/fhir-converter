@@ -20,7 +20,8 @@ class TemplateSystemLoader(ChoiceLoader):
     See `ChoiceLoader` for more information
     """
 
-
+    def __init__(self, loaders: List[BaseLoader]) -> None:
+        super().__init__(loaders)
 
     def get_source(
         self,

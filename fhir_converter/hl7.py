@@ -160,10 +160,16 @@ def parse_hl7_dtm(hl7_input: str) -> Hl7ParsedDtm:
         second = 0
         microsecond = 0
 
-    return Hl7ParsedDtm(
-        precision,
-        dt=datetime(year, month, day, hour, minute, second, microsecond, tzinfo=tzinfo),
-    )
+    try:
+        dt = datetime(year, month, day, hour, minute, second, microsecond, tzinfo=tzinfo)
+    except ValueError as e:
+        # Provide more context about which HL7 datetime failed
+        raise ValueError(
+            f"Invalid HL7 datetime '{hl7_input}': year={year}, month={month}, day={day}, "
+            f"hour={hour}, minute={minute}, second={second}. Error: {str(e)}"
+        ) from e
+
+    return Hl7ParsedDtm(precision, dt=dt)
 
 
 def hl7_to_fhir_dtm(dtm: str, precision: Optional[Hl7DtmPrecision] = None) -> str:
