@@ -61,7 +61,7 @@ def main():
 
     renderer = Hl7v2Renderer(
         env=make_environment(
-            loader=FileSystemLoader(search_path=args.template_dir),
+            loader=FileSystemLoader(search_path=args.template_dir, ext=".liquid"),
             additional_loaders=[hl7v2_default_loader],
         )
     )
