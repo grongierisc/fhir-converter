@@ -1107,3 +1107,32 @@ class Hl7v2DataToDictTest(TestCase):
 
         self.assertEqual(result, {'EVN': [{'Value': 'EVN Field'}]})
         self.assertIs(result['EVN'][0], _get_hl7v2_segment_dicts(hl7v2_data)[1])
+
+    def test_related_segment_uses_first_equal_parent(self) -> None:
+        hl7v2_data = Hl7v2Data('')
+        hl7v2_data.meta.extend(['PID', 'EVN', 'PID', 'EVN'])
+        hl7v2_data.data.extend([
+            Hl7v2Segment('PID Field', []),
+            Hl7v2Segment('First EVN Field', []),
+            Hl7v2Segment('PID Field', []),
+            Hl7v2Segment('Second EVN Field', [])
+        ])
+        second_pid = _get_hl7v2_segment_dicts(hl7v2_data)[2]
+
+        result = get_related_segment_list(hl7v2_data, second_pid, "EVN")
+
+        self.assertEqual(result, {'EVN': [{'Value': 'First EVN Field'}]})
+
+    def test_related_segment_cache_returns_new_result_list(self) -> None:
+        hl7v2_data = Hl7v2Data('')
+        hl7v2_data.meta.extend(['MSH', 'EVN'])
+        hl7v2_data.data.extend([
+            Hl7v2Segment('MSH Field', []),
+            Hl7v2Segment('EVN Field', [])
+        ])
+
+        first = get_related_segment_list(hl7v2_data, {"Value": "MSH Field"}, "EVN")
+        first['EVN'].append({"Value": "mutated"})
+        second = get_related_segment_list(hl7v2_data, {"Value": "MSH Field"}, "EVN")
+
+        self.assertEqual(second, {'EVN': [{'Value': 'EVN Field'}]})

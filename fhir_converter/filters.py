@@ -1,11 +1,12 @@
 from base64 import b64encode
+from bisect import bisect_right
 from datetime import datetime, timezone
 from functools import partial, wraps
 from hashlib import sha1, sha256
 from re import Match, Pattern
 from re import compile as re_compile
 from re import findall as re_findall
-from typing import Any, Callable, Final, Iterable, List, Mapping, Sequence, Tuple
+from typing import Any, Callable, Dict, Final, Iterable, List, Mapping, Sequence, Tuple
 import uuid
 import json
 from zlib import compress as z_compress
@@ -47,6 +48,7 @@ FilterT = Callable[..., Any]
 """Callable[..., Any]: A liquid filter function"""
 
 _HL7V2_SEGMENT_DICT_CACHE = "_fhir_converter_segment_dicts"
+_HL7V2_SEGMENT_INDEX_CACHE = "_fhir_converter_segment_index"
 
 date_format_map: Final[Mapping[str, str]] = frozendict(
     {
@@ -422,7 +424,8 @@ def transform_narrative(text: str, *, context: RenderContext) -> Mapping:
 def get_first_segments(hl7v2_data: Hl7v2Data, segment_id_content : str) -> dict:
     result = {}
     segment_ids = set(segment_id_content.split("|"))
-    segment_dicts = _get_hl7v2_segment_dicts(hl7v2_data)
+    segment_index = _get_hl7v2_segment_index(hl7v2_data)
+    segment_dicts = segment_index["segment_dicts"]
     for i in range(len(hl7v2_data.meta)):
         if hl7v2_data.meta[i] in segment_ids and hl7v2_data.meta[i] not in result:
             result[hl7v2_data.meta[i]] = segment_dicts[i]
@@ -435,56 +438,62 @@ def get_segment_lists(hl7v2_data, segment_id_content):
 
 @liquid_filter
 def get_related_segment_list(hl7v2_data, parent_segment, child_segment_id):
-    result = {}
-    segments = []
-    parent_found = False
-    child_index = -1
-    segment_dicts = _get_hl7v2_segment_dicts(hl7v2_data)
+    segment_index = _get_hl7v2_segment_index(hl7v2_data)
+    segment_dicts = segment_index["segment_dicts"]
+    meta_lower = segment_index["meta_lower"]
     child_segment_id_lower = child_segment_id.lower()
+    parent_index = _get_matching_segment_index(segment_index, parent_segment)
+    cache_key = (parent_index, child_segment_id_lower)
+    related_cache = segment_index["related_cache"]
 
-    for i in range(len(hl7v2_data.meta)):
-        if segment_dicts[i] == parent_segment:
-            parent_found = True
-        elif hl7v2_data.meta[i].lower() == child_segment_id_lower and parent_found:
-            child_index = i
-            break
+    if cache_key not in related_cache:
+        child_index = -1
 
-    if child_index > -1:
-        while child_index < len(hl7v2_data.meta) and hl7v2_data.meta[child_index].lower() == child_segment_id_lower:
-            segments.append(segment_dicts[child_index])
-            child_index += 1
+        if parent_index > -1:
+            for i in range(parent_index + 1, len(meta_lower)):
+                if segment_dicts[i] == parent_segment:
+                    continue
+                if meta_lower[i] == child_segment_id_lower:
+                    child_index = i
+                    break
 
-        result[child_segment_id] = segments
+        segments = []
+        if child_index > -1:
+            while child_index < len(meta_lower) and meta_lower[child_index] == child_segment_id_lower:
+                segments.append(segment_dicts[child_index])
+                child_index += 1
+        related_cache[cache_key] = segments
 
-    return result
+    segments = related_cache[cache_key]
+    return {child_segment_id: list(segments)} if segments else {}
 
 @liquid_filter
 def get_parent_segment(hl7v2_data, child_segment_id, child_index, parent_segment_id):
-    result = {}
-    target_child_index = -1
-    found_child_segment_count = -1
-    segment_dicts = _get_hl7v2_segment_dicts(hl7v2_data)
+    segment_index = _get_hl7v2_segment_index(hl7v2_data)
+    segment_dicts = segment_index["segment_dicts"]
     child_segment_id_lower = child_segment_id.lower()
     parent_segment_id_lower = parent_segment_id.lower()
+    cache_key = (child_segment_id_lower, child_index, parent_segment_id_lower)
+    parent_cache = segment_index["parent_cache"]
 
-    for i in range(len(hl7v2_data.meta)):
-        if hl7v2_data.meta[i].lower() == child_segment_id_lower:
-            found_child_segment_count += 1
-            if found_child_segment_count == child_index:
-                target_child_index = i
-                break
+    if cache_key not in parent_cache:
+        parent_index = -1
+        child_positions = segment_index["positions_by_lower"].get(child_segment_id_lower, [])
+        if isinstance(child_index, int) and 0 <= child_index < len(child_positions):
+            target_child_index = child_positions[child_index]
+            parent_positions = segment_index["positions_by_lower"].get(parent_segment_id_lower, [])
+            parent_position = bisect_right(parent_positions, target_child_index) - 1
+            if parent_position > -1:
+                parent_index = parent_positions[parent_position]
+        parent_cache[cache_key] = parent_index
 
-    for i in range(target_child_index, -1, -1):
-        if hl7v2_data.meta[i].lower() == parent_segment_id_lower:
-            result[parent_segment_id] = segment_dicts[i]
-            break
-
-    return result
+    parent_index = parent_cache[cache_key]
+    return {parent_segment_id: segment_dicts[parent_index]} if parent_index > -1 else {}
 
 @liquid_filter
 def has_segments(hl7v2_data, segment_id_content):
     segment_ids = set(segment_id_content.split("|"))
-    return segment_ids.issubset(set(hl7v2_data.meta))
+    return segment_ids.issubset(_get_hl7v2_segment_index(hl7v2_data)["meta_set"])
 
 @liquid_filter
 def split_data_by_segments(hl7v2_data: Hl7v2Data, segment_id_separators):
@@ -508,13 +517,14 @@ def split_data_by_segments(hl7v2_data: Hl7v2Data, segment_id_separators):
 def _get_segment_lists_internal(hl7v2_data, segment_ids):
     result = {}
     segment_ids = _segment_id_set(segment_ids)
-    segment_dicts = _get_hl7v2_segment_dicts(hl7v2_data)
-    for i in range(len(hl7v2_data.meta)):
-        if hl7v2_data.meta[i] in segment_ids:
-            if hl7v2_data.meta[i] in result:
-                result[hl7v2_data.meta[i]].append(segment_dicts[i])
+    segment_index = _get_hl7v2_segment_index(hl7v2_data)
+    segment_dicts = segment_index["segment_dicts"]
+    for segment_id in segment_ids:
+        for i in segment_index["positions_by_id"].get(segment_id, []):
+            if segment_id in result:
+                result[segment_id].append(segment_dicts[i])
             else:
-                result[hl7v2_data.meta[i]] = [segment_dicts[i]]
+                result[segment_id] = [segment_dicts[i]]
     return result
 
 def _segment_id_set(segment_ids) -> set:
@@ -523,11 +533,68 @@ def _segment_id_set(segment_ids) -> set:
     return set(segment_ids)
 
 def _get_hl7v2_segment_dicts(hl7v2_data: Hl7v2Data) -> List[dict]:
-    segment_dicts = getattr(hl7v2_data, _HL7V2_SEGMENT_DICT_CACHE, None)
-    if segment_dicts is None or len(segment_dicts) != len(hl7v2_data.data):
+    return _get_hl7v2_segment_index(hl7v2_data)["segment_dicts"]
+
+def _get_hl7v2_segment_index(hl7v2_data: Hl7v2Data) -> Dict[str, Any]:
+    segment_index = getattr(hl7v2_data, _HL7V2_SEGMENT_INDEX_CACHE, None)
+    if (
+        segment_index is None
+        or segment_index["data_len"] != len(hl7v2_data.data)
+        or segment_index["meta_len"] != len(hl7v2_data.meta)
+    ):
         segment_dicts = [_segment_to_dict(segment) for segment in hl7v2_data.data]
+        meta_lower = [segment_id.lower() for segment_id in hl7v2_data.meta]
+        positions_by_id: Dict[str, List[int]] = {}
+        positions_by_lower: Dict[str, List[int]] = {}
+        first_segment_index_by_value: Dict[Any, int] = {}
+        first_segment_index_by_object_id: Dict[int, int] = {}
+
+        for i, segment_id in enumerate(hl7v2_data.meta):
+            segment_key = _hashable_json_value(segment_dicts[i])
+            positions_by_id.setdefault(segment_id, []).append(i)
+            positions_by_lower.setdefault(meta_lower[i], []).append(i)
+            first_segment_index_by_value.setdefault(segment_key, i)
+            first_segment_index_by_object_id[id(segment_dicts[i])] = (
+                first_segment_index_by_value[segment_key]
+            )
+
+        segment_index = {
+            "data_len": len(hl7v2_data.data),
+            "meta_len": len(hl7v2_data.meta),
+            "segment_dicts": segment_dicts,
+            "meta_lower": meta_lower,
+            "meta_set": set(hl7v2_data.meta),
+            "positions_by_id": positions_by_id,
+            "positions_by_lower": positions_by_lower,
+            "first_segment_index_by_value": first_segment_index_by_value,
+            "first_segment_index_by_object_id": first_segment_index_by_object_id,
+            "related_cache": {},
+            "parent_cache": {},
+        }
+        setattr(hl7v2_data, _HL7V2_SEGMENT_INDEX_CACHE, segment_index)
         setattr(hl7v2_data, _HL7V2_SEGMENT_DICT_CACHE, segment_dicts)
-    return segment_dicts
+    return segment_index
+
+def _get_matching_segment_index(segment_index: Dict[str, Any], segment: Any) -> int:
+    object_index = segment_index["first_segment_index_by_object_id"].get(id(segment))
+    if object_index is not None:
+        return object_index
+    return segment_index["first_segment_index_by_value"].get(
+        _hashable_json_value(segment),
+        -1,
+    )
+
+def _hashable_json_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return tuple(
+            sorted(
+                (key, _hashable_json_value(item))
+                for key, item in value.items()
+            )
+        )
+    if isinstance(value, list):
+        return tuple(_hashable_json_value(item) for item in value)
+    return value
 
 def _segment_to_dict(hl7v2_segment : Hl7v2Segment) -> dict:
     result = {}
