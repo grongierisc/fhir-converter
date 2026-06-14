@@ -46,6 +46,8 @@ from fhir_converter.parsers import Hl7v2Data, Hl7v2Segment, Hl7v2Field, Hl7v2Com
 FilterT = Callable[..., Any]
 """Callable[..., Any]: A liquid filter function"""
 
+_HL7V2_SEGMENT_DICT_CACHE = "_fhir_converter_segment_dicts"
+
 date_format_map: Final[Mapping[str, str]] = frozendict(
     {
         "yyyy": "%Y",
@@ -419,10 +421,11 @@ def transform_narrative(text: str, *, context: RenderContext) -> Mapping:
 @liquid_filter
 def get_first_segments(hl7v2_data: Hl7v2Data, segment_id_content : str) -> dict:
     result = {}
-    segment_ids = segment_id_content.split("|")
+    segment_ids = set(segment_id_content.split("|"))
+    segment_dicts = _get_hl7v2_segment_dicts(hl7v2_data)
     for i in range(len(hl7v2_data.meta)):
         if hl7v2_data.meta[i] in segment_ids and hl7v2_data.meta[i] not in result:
-            result[hl7v2_data.meta[i]] = _segment_to_dict(hl7v2_data.data[i])
+            result[hl7v2_data.meta[i]] = segment_dicts[i]
     return result
 
 @liquid_filter
@@ -436,17 +439,19 @@ def get_related_segment_list(hl7v2_data, parent_segment, child_segment_id):
     segments = []
     parent_found = False
     child_index = -1
+    segment_dicts = _get_hl7v2_segment_dicts(hl7v2_data)
+    child_segment_id_lower = child_segment_id.lower()
 
     for i in range(len(hl7v2_data.meta)):
-        if _segment_to_dict(hl7v2_data.data[i]) == parent_segment:
+        if segment_dicts[i] == parent_segment:
             parent_found = True
-        elif hl7v2_data.meta[i].lower() == child_segment_id.lower() and parent_found:
+        elif hl7v2_data.meta[i].lower() == child_segment_id_lower and parent_found:
             child_index = i
             break
 
     if child_index > -1:
-        while child_index < len(hl7v2_data.meta) and hl7v2_data.meta[child_index].lower() == child_segment_id.lower():
-            segments.append(_segment_to_dict(hl7v2_data.data[child_index]))
+        while child_index < len(hl7v2_data.meta) and hl7v2_data.meta[child_index].lower() == child_segment_id_lower:
+            segments.append(segment_dicts[child_index])
             child_index += 1
 
         result[child_segment_id] = segments
@@ -458,26 +463,28 @@ def get_parent_segment(hl7v2_data, child_segment_id, child_index, parent_segment
     result = {}
     target_child_index = -1
     found_child_segment_count = -1
+    segment_dicts = _get_hl7v2_segment_dicts(hl7v2_data)
+    child_segment_id_lower = child_segment_id.lower()
+    parent_segment_id_lower = parent_segment_id.lower()
 
     for i in range(len(hl7v2_data.meta)):
-        if hl7v2_data.meta[i].lower() == child_segment_id.lower():
+        if hl7v2_data.meta[i].lower() == child_segment_id_lower:
             found_child_segment_count += 1
             if found_child_segment_count == child_index:
                 target_child_index = i
                 break
 
     for i in range(target_child_index, -1, -1):
-        if hl7v2_data.meta[i].lower() == parent_segment_id.lower():
-            result[parent_segment_id] = _segment_to_dict(hl7v2_data.data[i])
+        if hl7v2_data.meta[i].lower() == parent_segment_id_lower:
+            result[parent_segment_id] = segment_dicts[i]
             break
 
     return result
 
 @liquid_filter
 def has_segments(hl7v2_data, segment_id_content):
-    segment_ids = segment_id_content.split("|")
-    segment_lists = _get_segment_lists_internal(hl7v2_data, segment_ids)
-    return all(segment_id in segment_lists for segment_id in segment_ids)
+    segment_ids = set(segment_id_content.split("|"))
+    return segment_ids.issubset(set(hl7v2_data.meta))
 
 @liquid_filter
 def split_data_by_segments(hl7v2_data: Hl7v2Data, segment_id_separators):
@@ -500,13 +507,27 @@ def split_data_by_segments(hl7v2_data: Hl7v2Data, segment_id_separators):
 
 def _get_segment_lists_internal(hl7v2_data, segment_ids):
     result = {}
+    segment_ids = _segment_id_set(segment_ids)
+    segment_dicts = _get_hl7v2_segment_dicts(hl7v2_data)
     for i in range(len(hl7v2_data.meta)):
         if hl7v2_data.meta[i] in segment_ids:
             if hl7v2_data.meta[i] in result:
-                result[hl7v2_data.meta[i]].append(_segment_to_dict(hl7v2_data.data[i]))
+                result[hl7v2_data.meta[i]].append(segment_dicts[i])
             else:
-                result[hl7v2_data.meta[i]] = [_segment_to_dict(hl7v2_data.data[i])]
+                result[hl7v2_data.meta[i]] = [segment_dicts[i]]
     return result
+
+def _segment_id_set(segment_ids) -> set:
+    if isinstance(segment_ids, str):
+        return set(segment_ids.split("|"))
+    return set(segment_ids)
+
+def _get_hl7v2_segment_dicts(hl7v2_data: Hl7v2Data) -> List[dict]:
+    segment_dicts = getattr(hl7v2_data, _HL7V2_SEGMENT_DICT_CACHE, None)
+    if segment_dicts is None or len(segment_dicts) != len(hl7v2_data.data):
+        segment_dicts = [_segment_to_dict(segment) for segment in hl7v2_data.data]
+        setattr(hl7v2_data, _HL7V2_SEGMENT_DICT_CACHE, segment_dicts)
+    return segment_dicts
 
 def _segment_to_dict(hl7v2_segment : Hl7v2Segment) -> dict:
     result = {}

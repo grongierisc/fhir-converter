@@ -16,7 +16,14 @@ from fhir_converter.filters import all_filters, register_filters
 from fhir_converter.hl7 import Hl7DtmPrecision
 
 from fhir_converter.parsers import Hl7v2Data, Hl7v2Segment, Hl7v2Field, Hl7v2Component
-from fhir_converter.filters import _component_to_dict, _field_to_dict, _segment_to_dict, _get_segment_lists_internal
+from fhir_converter.filters import (
+    _component_to_dict,
+    _field_to_dict,
+    _get_hl7v2_segment_dicts,
+    _get_segment_lists_internal,
+    _segment_to_dict,
+    get_related_segment_list,
+)
 
 class FilterTest:
     """Base Test that doesn't extend TestCase to avoid the generic
@@ -1072,3 +1079,31 @@ class Hl7v2DataToDictTest(TestCase):
         hl7v2_data.data.append(hl7v2_segment_0)
         result = _get_segment_lists_internal(hl7v2_data, 'Segment0')
         self.assertEqual(result, {'Segment0': [{'Value': 'Segment0', '0': {'Value': 'Field0', '0': {'Value': 'Component0'}}}]})
+
+    def test_segment_list_uses_cached_dicts(self) -> None:
+        hl7v2_data = Hl7v2Data('')
+        hl7v2_data.meta.append('MSH')
+        hl7v2_data.data.append(Hl7v2Segment('MSH Field', []))
+
+        first = _get_segment_lists_internal(hl7v2_data, 'MSH')
+        second = _get_segment_lists_internal(hl7v2_data, 'MSH')
+
+        self.assertIs(first['MSH'][0], second['MSH'][0])
+        self.assertIs(first['MSH'][0], _get_hl7v2_segment_dicts(hl7v2_data)[0])
+
+    def test_related_segment_preserves_parent_equality_matching(self) -> None:
+        hl7v2_data = Hl7v2Data('')
+        hl7v2_data.meta.extend(['MSH', 'EVN'])
+        hl7v2_data.data.extend([
+            Hl7v2Segment('MSH Field', []),
+            Hl7v2Segment('EVN Field', [])
+        ])
+
+        result = get_related_segment_list(
+            hl7v2_data,
+            {"Value": "MSH Field"},
+            "EVN",
+        )
+
+        self.assertEqual(result, {'EVN': [{'Value': 'EVN Field'}]})
+        self.assertIs(result['EVN'][0], _get_hl7v2_segment_dicts(hl7v2_data)[1])

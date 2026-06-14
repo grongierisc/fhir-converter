@@ -8,7 +8,7 @@ from re import compile as re_compile
 from re import sub as re_sub
 from typing import Any, Dict, Final, Mapping, NamedTuple, Optional, Sequence
 
-from fhir_converter.parsers import parse_json
+from fhir_converter.parsers import _parse_generated_json
 from fhir_converter.utils import merge_dict, to_list_or_empty
 
 dtm_pattern: Final[Pattern] = re_compile(r"(\d+(?:\.\d*)?)(?:([+-]\d{2})(\d{2}))?")
@@ -323,7 +323,7 @@ def parse_fhir(json_input: str) -> Any:
     Returns:
         The FHIR object
     """
-    json_data = parse_json(json_input)
+    json_data = _parse_generated_json(json_input)
     if isinstance(json_data, dict):
         entries = to_list_or_empty(json_data.get("entry", []))
         if len(entries) > 1:

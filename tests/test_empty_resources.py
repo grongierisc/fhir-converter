@@ -2,7 +2,53 @@
 
 import json
 import pytest
-from fhir_converter.hl7 import is_empty_resource, post_process_fhir
+from fhir_converter.hl7 import (
+    get_fhir_entry_key,
+    is_empty_resource,
+    merge_extension,
+    post_process_fhir,
+)
+from fhir_converter.parsers import parse_json
+from fhir_converter.utils import merge_dict, to_list_or_empty
+
+
+def _slow_parse_fhir(json_input: str):
+    json_data = parse_json(json_input, use_fast_parser=False)
+    if isinstance(json_data, dict):
+        entries = to_list_or_empty(json_data.get("entry", []))
+        if len(entries) > 1:
+            unique_entries = {}
+            for entry in entries:
+                resource = entry.get("resource", {})
+                if is_empty_resource(resource):
+                    continue
+
+                key = get_fhir_entry_key(entry)
+                if key in unique_entries:
+                    merge_dict(unique_entries[key], entry)
+                else:
+                    unique_entries[key] = entry
+            json_data["entry"] = list(unique_entries.values())
+        elif len(entries) == 1 and is_empty_resource(entries[0].get("resource", {})):
+            json_data["entry"] = []
+    return json_data
+
+
+def _slow_post_process_fhir(json_data: str):
+    init = _slow_parse_fhir(json_data)
+    if isinstance(init, dict):
+        entries = to_list_or_empty(init.get("entry", []))
+        i = len(entries) - 1
+        while i > 0:
+            previous_type = entries[i - 1].get("resource", {}).get("resourceType")
+            current_resource = entries[i].get("resource", {})
+            if previous_type == current_resource.get("resourceType"):
+                if "extension" in current_resource:
+                    merge_extension(entries[i - 1], entries[i])
+                    del entries[i]
+            i -= 1
+
+    return init
 
 
 class TestEmptyResourceDetection:
@@ -189,6 +235,25 @@ OBR|1|ORDER001|ORDER001|TEST^Test^L|||20241007143000|||||||||||||||2024100714300
             resource = entry.get("resource", {})
             assert not is_empty_resource(resource), \
                 f"Found empty resource: {resource.get('resourceType')} with id {resource.get('id')}"
+
+    def test_oru_r01_matches_json5_processing_path(self):
+        """Optimized HL7v2 post-processing must match the previous JSON5-only path"""
+        from fhir_converter.renderers import Hl7v2Renderer, make_environment, hl7v2_default_loader
+
+        renderer = Hl7v2Renderer(
+            env=make_environment(
+                loader=hl7v2_default_loader,
+            )
+        )
+        input_data = """MSH|^~\\&|System||EMR||20241007143000||ORU^R01^ORU_R01|MSG001|P|2.5.1
+PID|1||12345||Doe^John||19850312|M
+OBR|1|ORDER001|ORDER001|TEST^Test^L|||20241007143000|||||||||||||||20241007143000
+OBX|1|NM|8480-6^Systolic blood pressure^LN|1|135|mm[Hg]||||||F|||20241007143000"""
+
+        template = renderer.env.get_template("ORU_R01", globals=renderer.template_globals)
+        rendered = template.render({"hl7v2Data": renderer._parse_hl7v2(input_data)})
+
+        assert post_process_fhir(rendered) == _slow_post_process_fhir(rendered)
 
 
 if __name__ == "__main__":

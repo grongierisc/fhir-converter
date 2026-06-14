@@ -454,6 +454,67 @@ class ParseFhirTest(TestCase):
             parse_fhir('{"resourceType": "Bundle", "type": "batch", "entry": []}'),
         )
 
+    def test_trailing_commas_and_duplicate_keys(self) -> None:
+        self.assertEqual(
+            {
+                "resourceType": "Bundle",
+                "type": "batch",
+                "entry": [
+                    {
+                        "resource": {
+                            "resourceType": "Patient",
+                            "id": "patient-1",
+                            "name": {"family": "Doe", "given": ["John"]},
+                        }
+                    }
+                ],
+            },
+            parse_fhir(
+                """
+                {
+                    "resourceType": "Bundle",
+                    "type": "batch",
+                    "entry": [
+                        {
+                            "resource": {
+                                "resourceType": "Patient",
+                                "id": "patient-1",
+                                "name": {"family": "Doe"},
+                                "name": {"given": ["John"]},
+                            },
+                        },
+                    ],
+                }
+                """
+            ),
+        )
+
+    def test_empty_fields_are_skipped_by_fast_parser(self) -> None:
+        self.assertEqual(
+            {
+                "resourceType": "Patient",
+                "id": "patient-1",
+                "active": False,
+            },
+            parse_fhir(
+                """
+                {
+                    "resourceType": "Patient",
+                    "id": "patient-1",
+                    "name": [],
+                    "gender": "",
+                    "active": false,
+                }
+                """
+            ),
+        )
+
+    def test_json5_fallback(self) -> None:
+        self.assertEqual(
+            {"resourceType": "Bundle", "type": "batch"},
+            parse_fhir("{'resourceType':'Bundle','type':'batch','entry':[],}"),
+        )
+
     def test(self) -> None:
         fhir_json = {
             "resourceType": "Bundle",
